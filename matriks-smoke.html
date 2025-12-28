@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<title>Rokok → Matrix (Drag Fix)</title>
+
+<style>
+body{
+  margin:0;
+  background:#111;
+  overflow:hidden;
+  cursor:pointer;
+}
+canvas{display:block}
+
+/* ROKOK */
+.rokok{
+  position:absolute;
+  bottom:80px;
+  left:50%;
+  transform:translateX(-50%);
+  width:170px;
+  height:20px;
+  background:#eee;
+  border-radius:10px;
+  cursor:grab;
+}
+.rokok:active{cursor:grabbing}
+.rokok::before{
+  content:"";
+  position:absolute;
+  left:0;
+  width:30px;
+  height:20px;
+  background:orange;
+  border-radius:10px 0 0 10px;
+}
+.ember{
+  position:absolute;
+  right:-4px;
+  top:2px;
+  width:10px;
+  height:16px;
+  background:radial-gradient(circle,#ff4500,#aa0000);
+  border-radius:50%;
+  box-shadow:0 0 12px 4px rgba(255,80,0,.8);
+}
+</style>
+</head>
+<body>
+
+<div class="rokok"><div class="ember"></div></div>
+<canvas id="canvas"></canvas>
+
+<audio id="clickSound" src="sound-click.mp3" preload="auto"></audio>
+<audio id="glitchSound" src="sound-glitch.mp3" preload="auto" loop></audio>
+
+<script>
+/* ================== CANVAS ================== */
+const canvas=document.getElementById("canvas");
+const ctx=canvas.getContext("2d");
+canvas.width=innerWidth;
+canvas.height=innerHeight;
+window.addEventListener("resize",()=>{
+  canvas.width=innerWidth;
+  canvas.height=innerHeight;
+});
+
+/* ================== AUDIO ================== */
+const clickSound=document.getElementById("clickSound");
+const glitchSound=document.getElementById("glitchSound");
+let audioUnlocked=false;
+
+function unlockAudio(){
+  if(audioUnlocked) return;
+  clickSound.play().then(()=>{
+    clickSound.pause();
+    clickSound.currentTime=0;
+    audioUnlocked=true;
+  }).catch(()=>{});
+}
+document.body.addEventListener("click", unlockAudio, {once:true});
+
+/* ================== MATRIX ================== */
+let scene=1;
+const EFFECT_DURATION=5000;
+
+const matrixSets=[
+ "01",
+ "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+ "ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄ",
+ "!@#$%^&*(){}[]<>"
+];
+let matrixMode=0;
+setInterval(()=>matrixMode=(matrixMode+1)%matrixSets.length,600);
+
+/* ================== ROKOK DRAG ================== */
+const rokok=document.querySelector(".rokok");
+let dragging=false;
+let moved=false;
+let offsetX=0, offsetY=0;
+
+function startDrag(e){
+  dragging=true;
+  moved=false;
+  const r=rokok.getBoundingClientRect();
+  const x=e.touches?e.touches[0].clientX:e.clientX;
+  const y=e.touches?e.touches[0].clientY:e.clientY;
+  offsetX=x-r.left;
+  offsetY=y-r.top;
+}
+
+function drag(e){
+  if(!dragging) return;
+  moved=true;
+  const x=e.touches?e.touches[0].clientX:e.clientX;
+  const y=e.touches?e.touches[0].clientY:e.clientY;
+  rokok.style.left=(x-offsetX)+"px";
+  rokok.style.top=(y-offsetY)+"px";
+  rokok.style.bottom="auto";
+}
+
+function endDrag(){
+  dragging=false;
+  setTimeout(()=>moved=false,50); // cegah click palsu
+}
+
+rokok.addEventListener("mousedown",startDrag);
+document.addEventListener("mousemove",drag);
+document.addEventListener("mouseup",endDrag);
+rokok.addEventListener("touchstart",startDrag);
+document.addEventListener("touchmove",drag);
+document.addEventListener("touchend",endDrag);
+
+/* ================== ASAP ================== */
+const ember=document.querySelector(".ember");
+function getOrigin(){
+  const r=ember.getBoundingClientRect();
+  return {x:r.right,y:r.top+r.height/2};
+}
+
+const particles=[];
+function createParticle(){
+  const o=getOrigin();
+  return{
+    x:o.x,
+    y:o.y,
+    vx:Math.random()*2,
+    vy:Math.random()*2,
+    life:Math.random()
+  };
+}
+for(let i=0;i<420;i++)particles.push(createParticle());
+
+let effectTimer=null;
+
+/* ================== CLICK EFFECT ================== */
+document.body.addEventListener("click",()=>{
+  if(!audioUnlocked || moved) return;
+
+  clickSound.currentTime=0;
+  clickSound.play();
+
+  if(scene===1){
+    scene=2;
+    glitchSound.currentTime=0;
+    glitchSound.play();
+
+    clearTimeout(effectTimer);
+    effectTimer=setTimeout(()=>{
+      scene=1;
+      glitchSound.pause();
+      glitchSound.currentTime=0;
+    },EFFECT_DURATION);
+  }
+});
+
+/* ================== DRAW ================== */
+function draw(){
+  ctx.fillStyle="rgba(0,0,0,.25)";
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  particles.forEach((p,i)=>{
+    let color,symbol;
+
+    if(scene===1){
+      color=`rgba(200,200,200,${p.life})`;
+      symbol="•";
+    }else{
+      const set=matrixSets[matrixMode];
+      symbol=set[Math.floor(Math.random()*set.length)];
+      color=matrixMode===3
+        ?`rgba(${Math.random()*255},255,120,${p.life})`
+        :`rgba(0,255,120,${p.life})`;
+    }
+
+    ctx.fillStyle=color;
+    ctx.font="16px monospace";
+    ctx.fillText(symbol,p.x,p.y);
+
+    p.x+=scene===2?p.vx*0.6:p.vx;
+    p.y-=scene===2?p.vy*1.8:p.vy;
+    p.life-=0.003;
+
+    if(p.life<=0)particles[i]=createParticle();
+  });
+
+  requestAnimationFrame(draw);
+}
+draw();
+</script>
+</body>
+</html>
